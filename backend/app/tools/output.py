@@ -28,6 +28,7 @@ _REPL = {"—": "-", "–": "-", "→": "->", "≤": "<=", "≥": ">=", "‘": "
 def _latin1(text: str) -> str:
     for k, v in _REPL.items():
         text = text.replace(k, v)
+    text = "".join(ch for ch in text if ch in "\n\t" or ord(ch) >= 32)
     return text.encode("latin-1", errors="replace").decode("latin-1")
 
 
@@ -35,99 +36,242 @@ def render_html(doc: dict) -> str:
     return _env.get_template("report.html.j2").render(doc=doc)
 
 
+# Report PDF palette (RGB)
+_NAVY, _INK, _MUTED, _RULE = (15, 36, 68), (21, 27, 40), (93, 102, 121), (220, 226, 234)
+_ACCENT, _HEAD_BG, _ZEBRA = (31, 95, 191), (238, 242, 247), (248, 250, 252)
+
+
+class _ReportPDF(FPDF):
+    """Letter-size report with a running header (pages 2+) and a confidentiality/page-number footer on every page."""
+
+    def __init__(self, title: str, claim_no: str, generated: str, landscape: bool = False) -> None:
+        super().__init__(orientation="L" if landscape else "P", format="Letter", unit="pt")
+        self.report_title, self.claim_no, self.generated = title, claim_no, generated
+        self.set_margins(48, 54, 48)
+        self.set_auto_page_break(True, margin=56)
+        self.alias_nb_pages()
+
+    def header(self) -> None:
+        if self.page_no() == 1:
+            return
+        self.set_y(24)
+        self.set_font("Helvetica", "B", 7.5)
+        self.set_text_color(*_NAVY)
+        self.cell(0, 10, _latin1(f"{self.report_title}  |  Claim {self.claim_no}"))
+        self.set_font("Helvetica", "", 7.5)
+        self.set_text_color(*_MUTED)
+        self.set_x(self.l_margin)
+        self.cell(0, 10, _latin1(f"Generated {self.generated}"), align="R")
+        self.set_draw_color(*_RULE)
+        self.set_line_width(0.6)
+        self.line(self.l_margin, 38, self.w - self.r_margin, 38)
+        self.set_y(self.t_margin)
+
+    def footer(self) -> None:
+        self.set_y(-38)
+        self.set_draw_color(*_RULE)
+        self.set_line_width(0.6)
+        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
+        self.ln(5)
+        self.set_font("Helvetica", "", 7)
+        self.set_text_color(*_MUTED)
+        self.cell(0, 9, "CONFIDENTIAL - contains protected health information. Authorized claim-handling use only.")
+        self.set_x(self.l_margin)
+        self.set_font("Helvetica", "B", 7)
+        self.cell(0, 9, f"Page {self.page_no()} of {{nb}}", align="R")
+
+
 def render_pdf(doc: dict) -> tuple[bytes, int]:
+    from datetime import UTC, datetime
+
     from fpdf.enums import XPos, YPos
 
-    pdf = FPDF(format="Letter", unit="pt")
-    pdf.set_margins(40, 36, 40)
-    pdf.set_auto_page_break(True, margin=40)
+    header = doc.get("header") or []
+    claim_no = next((str(v) for k, v in header if k.lower().startswith("claim")), "-")
+    generated = datetime.now(UTC).strftime("%m/%d/%Y %H:%M UTC")
+    pdf = _ReportPDF(doc["title"], claim_no, generated, landscape=bool(doc.get("landscape")))
     pdf.add_page()
-    width = pdf.w - 80
-    nl = {"new_x": XPos.LMARGIN, "new_y": YPos.NEXT, "align": "L"}  # always return to the left margin
+    width = pdf.w - pdf.l_margin - pdf.r_margin
+    left = pdf.l_margin
+    nl = {"new_x": XPos.LMARGIN, "new_y": YPos.NEXT, "align": "L"}
 
-    def para(text: str, size: float, style: str = "", lh: float = 11.0, color=(0, 0, 0), fill: bool = False) -> None:
+    def text_height(w: float, lh: float, text: str) -> float:
+        return lh * max(1, len(pdf.multi_cell(w, lh, text, dry_run=True, output="LINES")))
+
+    def para(text: str, size: float = 9, style: str = "", lh: float = 12.5, color=_INK, w: float | None = None, x: float | None = None) -> None:
         pdf.set_font("Helvetica", style, size)
         pdf.set_text_color(*color)
-        pdf.multi_cell(width, lh, _latin1(text), fill=fill, **nl)
-        pdf.set_text_color(0, 0, 0)
+        pdf.set_x(left if x is None else x)
+        pdf.multi_cell(w or width, lh, _latin1(text), **nl)
+        pdf.set_text_color(*_INK)
 
-    para(doc["title"], 14, "B", 17)
-    if doc.get("subtitle"):
-        para(doc["subtitle"], 8.5, "", 11, (90, 90, 90))
-    if doc.get("banner"):
-        pdf.set_fill_color(255, 243, 205)
-        pdf.ln(2)
-        para(doc["banner"], 8, "B", 11, (122, 83, 0), fill=True)
-    if doc.get("header"):
-        pdf.ln(4)
-        pairs = doc["header"]
-        col, label_w = width / 2, 72
-        for i in range(0, len(pairs), 2):
-            y, x = pdf.get_y(), pdf.l_margin
-            heights = []
-            for k, v in pairs[i:i + 2]:
-                pdf.set_xy(x, y)
-                pdf.set_font("Helvetica", "B", 8)
-                pdf.cell(label_w, 11, _latin1(f"{k}:"))
-                pdf.set_font("Helvetica", "", 8)
-                pdf.set_xy(x + label_w, y)
-                pdf.multi_cell(col - label_w - 6, 11, _latin1(str(v or "-")), **nl)
-                heights.append(pdf.get_y() - y)
-                x += col
-            pdf.set_xy(pdf.l_margin, y + max(heights))
-        pdf.set_draw_color(220, 225, 232)
-        pdf.line(pdf.l_margin, pdf.get_y() + 3, pdf.l_margin + width, pdf.get_y() + 3)
-        pdf.ln(5)
-    for sec in doc.get("sections", []):
-        if pdf.get_y() > pdf.h - 90:
+    def ensure(space: float) -> None:
+        if pdf.get_y() + space > pdf.h - pdf.b_margin:
             pdf.add_page()
-        pdf.ln(5)
-        para(sec["heading"], 10, "B", 13, (25, 60, 120))
+
+    def kv_grid(pairs: list, fill, accent=None) -> None:
+        """Two-column grid of label-over-value cells inside a shaded panel."""
+        pad, col_gap = 10, 16
+        col_w = (width - 2 * pad - col_gap) / 2
+        rows = []
+        for i in range(0, len(pairs), 2):
+            cells = [(str(k), _latin1(str(v if v not in (None, "") else "-"))) for k, v in pairs[i:i + 2]]
+            pdf.set_font("Helvetica", "", 9)
+            rows.append((cells, 17 + max(text_height(col_w, 11.5, v) for _, v in cells)))
+        total = sum(h for _, h in rows) + 2 * pad - 6
+        ensure(min(total, 200))
+        y0 = pdf.get_y()
+        pdf.set_fill_color(*fill)
+        pdf.rect(left, y0, width, total, style="F", round_corners=True, corner_radius=4)
+        if accent:
+            pdf.set_fill_color(*accent)
+            pdf.rect(left, y0, 3, total, style="F")
+        y = y0 + pad
+        for cells, h in rows:
+            for j, (k, v) in enumerate(cells):
+                x = left + pad + j * (col_w + col_gap)
+                pdf.set_xy(x, y)
+                pdf.set_font("Helvetica", "B", 6.5)
+                pdf.set_text_color(*_MUTED)
+                pdf.cell(col_w, 8, _latin1(k.upper()))
+                pdf.set_xy(x, y + 9)
+                pdf.set_font("Helvetica", "", 9)
+                pdf.set_text_color(*_INK)
+                pdf.multi_cell(col_w, 11.5, v, new_x=XPos.RIGHT, new_y=YPos.TOP, align="L")
+            y += h
+        pdf.set_y(y0 + total + 10)
+
+    # ---- title block ----
+    pdf.set_fill_color(*_NAVY)
+    pdf.rect(0, 0, pdf.w, 6, style="F")
+    pdf.set_y(30)
+    pdf.set_font("Helvetica", "B", 7.5)
+    pdf.set_text_color(*_ACCENT)
+    pdf.cell(0, 10, "CLAIMS AI  |  WORKERS' COMPENSATION MEDICAL RECORD REVIEW")
+    pdf.set_x(left)
+    pdf.set_font("Helvetica", "", 7.5)
+    pdf.set_text_color(*_MUTED)
+    pdf.cell(0, 10, f"Generated {generated}", align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(8)
+    para(doc["title"], 20, "B", 24, _NAVY)
+    if doc.get("subtitle"):
+        para(doc["subtitle"], 10, "", 14, _MUTED)
+    pdf.ln(8)
+    if doc.get("banner"):
+        pdf.set_font("Helvetica", "B", 8.5)
+        h = text_height(width - 24, 12, _latin1(doc["banner"])) + 12
+        y0 = pdf.get_y()
+        pdf.set_fill_color(255, 248, 225)
+        pdf.rect(left, y0, width, h, style="F", round_corners=True, corner_radius=4)
+        pdf.set_fill_color(214, 158, 46)
+        pdf.rect(left, y0, 3, h, style="F")
+        pdf.set_y(y0 + 6)
+        para(doc["banner"], 8.5, "B", 12, (122, 83, 0), w=width - 24, x=left + 14)
+        pdf.set_y(y0 + h + 10)
+    if header:
+        kv_grid(header, (245, 247, 251))
+
+    # ---- sections ----
+    for n, sec in enumerate(doc.get("sections", []), start=1):
+        ensure(140 if sec.get("table", {}).get("rows") or sec.get("summary") else 90)
+        pdf.ln(6)
+        y = pdf.get_y()
+        pdf.set_font("Helvetica", "B", 11.5)
+        pdf.set_text_color(*_NAVY)
+        pdf.cell(0, 15, _latin1(f"{n}.  {sec['heading']}"), **nl)
+        pdf.set_draw_color(*_ACCENT)
+        pdf.set_line_width(1.2)
+        pdf.line(left, y + 18, left + 28, y + 18)
+        pdf.set_draw_color(*_RULE)
+        pdf.set_line_width(0.6)
+        pdf.line(left + 28, y + 18, left + width, y + 18)
+        pdf.set_y(y + 24)
+        pdf.set_text_color(*_INK)
+        if sec.get("summary"):
+            kv_grid(sec["summary"], (234, 241, 252), _ACCENT)
+        for label, text in sec.get("fields", []):
+            pdf.set_font("Helvetica", "", 9.5)
+            ensure(22 + text_height(width, 13, _latin1(str(text))))
+            para(label.upper(), 6.5, "B", 9, _MUTED)
+            para(str(text), 9.5, "", 13)
+            pdf.ln(5)
+        if sec.get("note"):
+            para(sec["note"], 8.5, "I", 11.5, _MUTED)
+            pdf.ln(3)
         for p in sec.get("paragraphs", []):
-            para(p, 8.5, "", 11)
-        for b in sec.get("bullets", []):
-            pdf.set_font("Helvetica", "", 8.5)
+            para(p, 9.5, "", 13.5)
+            pdf.ln(4)
+        bullets = sec.get("bullets")
+        for b in bullets or []:
+            pdf.set_font("Helvetica", "", 9)
+            ensure(text_height(width - 14, 12.5, _latin1(b)))
             y = pdf.get_y()
-            pdf.set_xy(pdf.l_margin, y)
-            pdf.cell(10, 11, "-")
-            pdf.set_xy(pdf.l_margin + 10, y)
-            pdf.multi_cell(width - 10, 11, _latin1(b), **nl)
+            pdf.set_fill_color(*_ACCENT)
+            pdf.ellipse(left + 2, y + 4.5, 3.2, 3.2, style="F")
+            para(b, 9, "", 12.5, w=width - 14, x=left + 14)
+            pdf.ln(2)
         table = sec.get("table")
+        if table is not None and not table.get("rows") and not bullets and not sec.get("paragraphs"):
+            para(table.get("empty", "None recorded."), 9, "I", 12, _MUTED)
+        if bullets is not None and not bullets:
+            para("None recorded.", 9, "I", 12, _MUTED)
         if table and table.get("rows"):
             cols = table["columns"]
             widths = table.get("widths") or [width / len(cols)] * len(cols)
             scale = width / sum(widths)
             widths = [w * scale for w in widths]
+            lh, pad = 10.5, 4
 
             def header_row() -> None:
-                pdf.set_font("Helvetica", "B", 7.5)
-                pdf.set_fill_color(235, 239, 245)
-                pdf.set_x(pdf.l_margin)
+                pdf.set_font("Helvetica", "B", 7)
+                y0 = pdf.get_y()
+                hh = max(text_height(w - 2 * pad, 8.5, _latin1(c.upper())) for c, w in zip(cols, widths, strict=False)) + 7
+                pdf.set_fill_color(*_HEAD_BG)
+                pdf.rect(left, y0, width, hh, style="F")
+                x = left
+                pdf.set_text_color(*_MUTED)
                 for c, w in zip(cols, widths, strict=False):
-                    pdf.cell(w, 13, _latin1(c), border=1, fill=True)
-                pdf.ln(13)
+                    pdf.set_xy(x + pad, y0 + 4)
+                    pdf.multi_cell(w - 2 * pad, 8.5, _latin1(c.upper()), new_x=XPos.RIGHT, new_y=YPos.TOP, align="L")
+                    x += w
+                pdf.set_text_color(*_INK)
+                pdf.set_y(y0 + hh)
 
-            pdf.ln(2)
+            ensure(60)
             header_row()
-            pdf.set_font("Helvetica", "", 7.5)
-            for row in table["rows"]:
+            for i, row in enumerate(table["rows"]):
                 cells = [_latin1(str(v if v is not None else "")) for v in row]
-                lines = [max(1, len(pdf.multi_cell(w - 4, 9, t, dry_run=True, output="LINES"))) for t, w in zip(cells, widths, strict=False)]
-                h = 9 * max(lines) + 4
-                if pdf.get_y() + h > pdf.h - 40:
+                pdf.set_font("Helvetica", "", 8)
+                h = max(text_height(w - 2 * pad, lh, t) for t, w in zip(cells, widths, strict=False)) + 2 * pad
+                if pdf.get_y() + h > pdf.h - pdf.b_margin:
                     pdf.add_page()
                     header_row()
-                    pdf.set_font("Helvetica", "", 7.5)
-                y, x = pdf.get_y(), pdf.l_margin
-                for t, w in zip(cells, widths, strict=False):
-                    pdf.rect(x, y, w, h)
-                    pdf.set_xy(x + 2, y + 2)
-                    pdf.multi_cell(w - 4, 9, t, new_x=XPos.RIGHT, new_y=YPos.TOP, align="L")
+                    pdf.set_font("Helvetica", "", 8)
+                y, x = pdf.get_y(), left
+                if i % 2:
+                    pdf.set_fill_color(*_ZEBRA)
+                    pdf.rect(left, y, width, h, style="F")
+                for j, (t, w) in enumerate(zip(cells, widths, strict=False)):
+                    pdf.set_font("Helvetica", "B" if j == 0 and table.get("bold_first") else "", 8)
+                    pdf.set_xy(x + pad, y + pad)
+                    pdf.multi_cell(w - 2 * pad, lh, t, new_x=XPos.RIGHT, new_y=YPos.TOP, align="L")
                     x += w
-                pdf.set_xy(pdf.l_margin, y + h)
+                pdf.set_draw_color(*_RULE)
+                pdf.set_line_width(0.5)
+                pdf.line(left, y + h, left + width, y + h)
+                pdf.set_xy(left, y + h)
+            if table.get("caption"):
+                pdf.ln(3)
+                para(table["caption"], 7.5, "I", 10, _MUTED)
+        pdf.ln(4)
+
     if doc.get("footer"):
+        ensure(50)
         pdf.ln(8)
-        para(doc["footer"], 7, "I", 9, (110, 110, 110))
+        pdf.set_draw_color(*_RULE)
+        pdf.line(left, pdf.get_y(), left + width, pdf.get_y())
+        pdf.ln(6)
+        para(doc["footer"], 7.5, "I", 10.5, _MUTED)
     return bytes(pdf.output()), pdf.page_no()
 
 
@@ -151,6 +295,18 @@ def render_docx(doc: dict) -> bytes:
             row[0].text, row[1].text = str(k), str(v or "-")
     for sec in doc.get("sections", []):
         d.add_heading(sec["heading"], level=2)
+        if sec.get("summary"):
+            t = d.add_table(rows=0, cols=2)
+            t.style = "Light Grid Accent 1"
+            for k, v in sec["summary"]:
+                row = t.add_row().cells
+                row[0].text, row[1].text = str(k), str(v or "-")
+        for label, text in sec.get("fields", []):
+            par = d.add_paragraph()
+            par.add_run(f"{label}: ").bold = True
+            par.add_run(str(text))
+        if sec.get("note"):
+            d.add_paragraph(sec["note"]).runs[0].italic = True
         for p in sec.get("paragraphs", []):
             d.add_paragraph(p)
         for b in sec.get("bullets", []):
@@ -165,6 +321,10 @@ def render_docx(doc: dict) -> bytes:
                 cells = t.add_row().cells
                 for i, v in enumerate(row):
                     cells[i].text = str(v if v is not None else "")
+            if table.get("caption"):
+                d.add_paragraph(table["caption"]).runs[0].italic = True
+        elif table is not None and not sec.get("bullets") and not sec.get("paragraphs"):
+            d.add_paragraph(table.get("empty", "None recorded.")).runs[0].italic = True
     if doc.get("footer"):
         d.add_paragraph(doc["footer"]).italic = True
     buf = io.BytesIO()

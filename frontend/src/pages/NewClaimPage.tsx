@@ -104,6 +104,7 @@ export default function NewClaimPage() {
       return claim;
     },
     onSuccess: (claim) => navigate(`/claims/${claim.id}`),
+    meta: { success: "Claim created" },
   });
 
   const picker = (key: string, label: string, list?: { id: string; full_name: string }[]) => (

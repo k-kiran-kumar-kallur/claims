@@ -17,6 +17,6 @@ export default defineConfig(({ mode }) => {
       proxy: { "/api": { target: apiTarget, changeOrigin: true } },
     },
     build: { outDir: "dist", sourcemap: false, chunkSizeWarningLimit: 1500 },
-    test: { environment: "jsdom", globals: true, setupFiles: ["./src/setupTests.ts"] },
+    test: { environment: "jsdom", globals: true, setupFiles: ["./src/setupTests.ts"], include: ["src/**/*.test.{ts,tsx}"] },
   };
 });

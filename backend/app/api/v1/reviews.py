@@ -220,11 +220,15 @@ def notifications(unread_only: bool = False, db: Session = Depends(get_db), user
     return envelope([n.to_dict() for n in rows], unread=unread)
 
 
+class MarkReadIn(BaseModel):
+    ids: list[str] | None = None  # omitted or empty -> mark all of the user's notifications read
+
+
 @router.post("/notifications/read")
-def mark_read(ids: list[str] | None = None, db: Session = Depends(get_db), user: Principal = Depends(current_user)):
+def mark_read(body: MarkReadIn | None = None, db: Session = Depends(get_db), user: Principal = Depends(current_user)):
     q = select(Notification).where(Notification.user_id == user.id, Notification.read_at.is_(None))
-    if ids:
-        q = q.where(Notification.id.in_(ids))
+    if body and body.ids:
+        q = q.where(Notification.id.in_(body.ids))
     n = 0
     for row in db.execute(q).scalars():
         row.read_at = now_iso()

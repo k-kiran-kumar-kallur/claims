@@ -24,6 +24,7 @@ const SummaryPage = lazy(() => import("./pages/SummaryPage"));
 const DecisionPage = lazy(() => import("./pages/DecisionPage"));
 const RtwPage = lazy(() => import("./pages/RtwPage"));
 const AuditPage = lazy(() => import("./pages/AuditPage"));
+const ActivityPage = lazy(() => import("./pages/ActivityPage"));
 const SupervisorPage = lazy(() => import("./pages/SupervisorPage"));
 const ReportsPage = lazy(() => import("./pages/ReportsPage"));
 const AdminPage = lazy(() => import("./pages/admin/AdminPage"));
@@ -59,7 +60,8 @@ export default function App() {
             <Route path="decision" element={<DecisionPage />} />
             <Route path="signoff" element={<DecisionPage />} />
             <Route path="rtw" element={<RtwPage />} />
-            <Route path="audit" element={<ProtectedRoute perms={["audit:view"]}><AuditPage /></ProtectedRoute>} />
+            <Route path="activity" element={<ActivityPage />} />
+            <Route path="audit"element={<ProtectedRoute perms={["audit:view"]}><AuditPage /></ProtectedRoute>} />
           </Route>
           <Route path="supervisor" element={<ProtectedRoute roles={["claims_supervisor"]}><SupervisorPage /></ProtectedRoute>} />
           <Route path="reports" element={<ProtectedRoute perms={["report:export"]}><ReportsPage /></ProtectedRoute>} />

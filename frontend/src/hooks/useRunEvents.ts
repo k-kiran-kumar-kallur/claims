@@ -19,23 +19,33 @@ const INVALIDATE: Record<string, string[][]> = {
   record_keeping: [["decisions"], ["reports"]],
 };
 
-/** Server-sent events over fetch (so the bearer token can be sent); reconnects with Last-Event-ID. */
-export function useRunEvents(runId?: string | null, claimId?: string) {
+const MAX_EVENTS = 2000;
+
+/**
+ * Server-sent events over fetch (so the bearer token can be sent); reconnects with Last-Event-ID.
+ * The server replays the run's full history first, so this also serves as the log of finished runs.
+ * Only `live` runs invalidate cached queries, so replaying an old log does not trigger refetches.
+ */
+export function useRunEvents(runId?: string | null, claimId?: string, live = true) {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [connected, setConnected] = useState(false);
+  const [ended, setEnded] = useState(false);
   const lastId = useRef(0);
+  const liveRef = useRef(live);
+  liveRef.current = live;
   const qc = useQueryClient();
 
   useEffect(() => {
     if (!runId) return;
     setEvents([]);
+    setEnded(false);
     lastId.current = 0;
     const ctrl = new AbortController();
     let stopped = false;
 
     const handle = (ev: RunEvent) => {
-      setEvents((prev) => [...prev.slice(-300), ev]);
-      if (["node_completed", "awaiting_review", "awaiting_documents", "run_completed", "run_failed", "run_cancelled", "run_resumed", "retrying"].includes(ev.event)) {
+      setEvents((prev) => [...prev.slice(-(MAX_EVENTS - 1)), ev]);
+      if (liveRef.current && ["node_completed", "awaiting_review", "awaiting_documents", "run_completed", "run_failed", "run_cancelled", "run_resumed", "retrying"].includes(ev.event)) {
         qc.invalidateQueries({ queryKey: ["claim", claimId] });
         qc.invalidateQueries({ queryKey: ["runs", claimId] });
         qc.invalidateQueries({ queryKey: ["reviews"] });
@@ -79,6 +89,7 @@ export function useRunEvents(runId?: string | null, claimId?: string) {
             }
             if (event === "end") {
               stopped = true;
+              setEnded(true);
               return;
             }
             if (!data || event === "ping") continue;
@@ -104,5 +115,5 @@ export function useRunEvents(runId?: string | null, claimId?: string) {
     };
   }, [runId, claimId, qc]);
 
-  return { events, connected };
+  return { events, connected, ended };
 }

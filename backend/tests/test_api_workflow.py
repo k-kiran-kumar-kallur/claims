@@ -197,3 +197,22 @@ def test_end_to_end_workflow(client):
             "phi.view", "report.export"} <= actions
     metrics = client.get("/api/v1/metrics/summary", headers=supervisor).json()["data"]
     assert metrics["business"]["pages_processed"] > 0
+
+
+def test_mark_notifications_read_accepts_json_object(client, db):
+    from app.models import Notification, User
+    from app.services.events import notify
+
+    h = login(client, "ncm@claims.example")
+    uid = db.query(User).filter(User.email == "ncm@claims.example").one().id
+    for i in range(3):
+        notify(db, uid, "test", f"Test notification {i}")
+    db.commit()
+    first = db.query(Notification).filter(Notification.user_id == uid, Notification.read_at.is_(None)).first().id
+
+    # mark one by id, then everything with the empty object the UI sends
+    r = client.post("/api/v1/notifications/read", json={"ids": [first]}, headers=h)
+    assert r.status_code == 200 and r.json()["data"]["marked"] == 1
+    r = client.post("/api/v1/notifications/read", json={}, headers=h)
+    assert r.status_code == 200 and r.json()["data"]["marked"] >= 2
+    assert client.get("/api/v1/notifications", headers=h).json()["meta"]["unread"] == 0

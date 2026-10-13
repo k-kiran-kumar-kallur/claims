@@ -51,6 +51,7 @@ export function useSubmitReview(claimId?: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, body }: { id: string; body: unknown }) => api.post(`/reviews/${id}/submit`, body),
+    meta: { success: "Review submitted - the workflow will continue automatically" },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["reviews"] });
       qc.invalidateQueries({ queryKey: ["claim", claimId] });

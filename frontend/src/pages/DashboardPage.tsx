@@ -1,4 +1,6 @@
 import { Alert, Box, Button, Chip, Grid2 as Grid, LinearProgress, List, ListItem, ListItemText, MenuItem, Stack, TextField, Tooltip, Typography } from "@mui/material";
+import AccountTreeIcon from "@mui/icons-material/AccountTree";
+import FlagIcon from "@mui/icons-material/OutlinedFlag";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import ReplayIcon from "@mui/icons-material/Replay";
 import StopIcon from "@mui/icons-material/Stop";
@@ -9,7 +11,8 @@ import { Link as RouterLink, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import { CitationList, CitedMarkdown } from "../components/CitationViewer";
-import { AiDraftBadge, asList, EmptyState, ErrorAlert, fmtDate, ReasonDialog, Section, SeverityChip, StatusChip } from "../components/common";
+import { AiDraftBadge, asList, EmptyState, ErrorAlert, fmtDate, LoadingRows, ReasonDialog, Section, SeverityChip, StatusChip } from "../components/common";
+import { riskColor } from "../theme/theme";
 import { RunProgress } from "../components/RunProgress";
 import { useDashboard, useRuns, useUsers } from "../hooks/queries";
 
@@ -24,10 +27,10 @@ export default function DashboardPage() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const run = runs.data?.[0];
   const refresh = () => { qc.invalidateQueries({ queryKey: ["runs", claimId] }); qc.invalidateQueries({ queryKey: ["claim", claimId] }); qc.invalidateQueries({ queryKey: ["dashboard", claimId] }); };
-  const start = useMutation({ mutationFn: (mode: string) => api.post(`/claims/${claimId}/runs`, { mode }), onSuccess: refresh });
-  const cancel = useMutation({ mutationFn: (reason: string) => api.post(`/runs/${run!.id}/cancel`, { reason }), onSuccess: refresh });
-  const retry = useMutation({ mutationFn: () => api.post(`/runs/${run!.id}/retry`), onSuccess: refresh });
-  if (dash.isLoading) return <LinearProgress />;
+  const start = useMutation({ mutationFn: (mode: string) => api.post(`/claims/${claimId}/runs`, { mode }), onSuccess: refresh, meta: { success: "Processing started - progress updates live below" } });
+  const cancel = useMutation({ mutationFn: (reason: string) => api.post(`/runs/${run!.id}/cancel`, { reason }), onSuccess: refresh, meta: { success: "Run cancelled" } });
+  const retry = useMutation({ mutationFn: () => api.post(`/runs/${run!.id}/retry`), onSuccess: refresh, meta: { success: "Retrying from the last checkpoint" } });
+  if (dash.isLoading) return <LoadingRows rows={4} height={64} />;
   if (dash.error) return <ErrorAlert error={dash.error} />;
   const d = dash.data;
   const exp = d.exposure;
@@ -44,7 +47,8 @@ export default function DashboardPage() {
           {active && <Button color="error" startIcon={<StopIcon />} onClick={() => setCancelOpen(true)}>Cancel run</Button>}
           {run?.status === "failed" && can("run:manage") && <Button startIcon={<ReplayIcon />} onClick={() => retry.mutate()}>Retry from checkpoint</Button>}
         </>}>
-        {run ? <RunProgress claimId={claimId!} run={run} /> : <EmptyState title="No workflow run yet" hint="Upload the medical-record package on the Documents tab, then start processing." />}
+        {run ? <RunProgress claimId={claimId!} run={run} /> : <EmptyState icon={<AccountTreeIcon />} title="No workflow run yet" hint="Upload the medical-record package on the Documents tab, then start processing. Each of the 7 stages will appear here as it runs."
+          action={<Button component={RouterLink} to="documents">Go to documents</Button>} />}
       </Section>
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 8 }}>
@@ -55,18 +59,34 @@ export default function DashboardPage() {
         </Grid>
         <Grid size={{ xs: 12, lg: 4 }}>
           <Section title="Exposure indicators">
+            <Box sx={{ mb: 2 }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+                <Typography variant="body2" color="text.secondary">Risk score</Typography>
+                <Typography variant="h5" sx={{ color: exp.risk_score != null ? `${riskColor(exp.risk_score)}.main` : "text.secondary" }}>
+                  {exp.risk_score != null ? exp.risk_score.toFixed(2) : "-"}
+                  {exp.complexity && <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.75, textTransform: "capitalize" }}>{exp.complexity}</Typography>}
+                </Typography>
+              </Stack>
+              <LinearProgress variant="determinate" value={Math.min(100, (exp.risk_score ?? 0) * 100)} color={exp.risk_score != null ? riskColor(exp.risk_score) as any : "inherit"} sx={{ height: 8, mt: 0.75, bgcolor: "#eef2f7" }} />
+              <Stack direction="row" justifyContent="space-between"><Typography variant="caption" color="text.secondary">Low</Typography><Typography variant="caption" color="text.secondary">High</Typography></Stack>
+            </Box>
+            <Box sx={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 1, mb: 1.5 }}>
+              {[["TTD days", exp.ttd_days ?? "-", "Days of temporary total disability"], ["Deviations", exp.open_guideline_deviations, "Open guideline deviations"], ["Gaps", exp.open_gaps, "Open timeline gaps"]].map(([k, v, t]) => (
+                <Tooltip key={k as string} title={t as string}>
+                  <Box sx={{ p: 1.25, borderRadius: 1.5, bgcolor: "#f5f7fb", textAlign: "center" }}>
+                    <Typography variant="h6">{v as any}</Typography>
+                    <Typography variant="caption" color="text.secondary">{k as string}</Typography>
+                  </Box>
+                </Tooltip>
+              ))}
+            </Box>
             <Stack spacing={1}>
-              <Stack direction="row" justifyContent="space-between"><Typography variant="body2">Risk score</Typography><Chip label={exp.risk_score != null ? exp.risk_score.toFixed(2) : "-"} color={(exp.risk_score ?? 0) >= 0.7 ? "error" : (exp.risk_score ?? 0) >= 0.4 ? "warning" : "default"} /></Stack>
-              <Stack direction="row" justifyContent="space-between"><Typography variant="body2">Complexity</Typography><Typography variant="body2" fontWeight={600}>{exp.complexity ?? "-"}</Typography></Stack>
-              <Stack direction="row" justifyContent="space-between"><Typography variant="body2">Days of temporary total disability</Typography><Typography variant="body2" fontWeight={600}>{exp.ttd_days ?? "-"}</Typography></Stack>
-              <Stack direction="row" justifyContent="space-between"><Typography variant="body2">Open guideline deviations</Typography><Typography variant="body2" fontWeight={600}>{exp.open_guideline_deviations}</Typography></Stack>
-              <Stack direction="row" justifyContent="space-between"><Typography variant="body2">Open timeline gaps</Typography><Typography variant="body2" fontWeight={600}>{exp.open_gaps}</Typography></Stack>
               {exp.routing_rationale && <Typography variant="caption" color="text.secondary">{exp.routing_rationale}</Typography>}
               {exp.risk_factors?.length > 0 && <Stack direction="row" flexWrap="wrap" gap={0.5}>{exp.risk_factors.map((f: any) => <Tooltip key={f.factor} title={f.detail}><Chip size="small" variant="outlined" label={`${f.factor.replace(/_/g, " ")} +${f.weight}`} /></Tooltip>)}</Stack>}
             </Stack>
           </Section>
           <Section title={`AI flags (${openFlags.length} open)`} actions={can("decision:make") && <Button component={RouterLink} to="decision" size="small">Decision workspace</Button>}>
-            {d.flags.length === 0 && <Typography variant="body2" color="text.secondary">No flags yet.</Typography>}
+            {d.flags.length === 0 && <Stack direction="row" spacing={1} alignItems="center" sx={{ color: "text.secondary" }}><FlagIcon fontSize="small" /><Typography variant="body2">No flags yet. They are raised during guideline review.</Typography></Stack>}
             <List dense disablePadding>
               {d.flags.slice(0, 10).map((f: any) => (
                 <ListItem key={f.id} disableGutters sx={{ alignItems: "flex-start" }}>

@@ -11,9 +11,13 @@
 {% if doc.banner %}<div class="banner">{{ doc.banner }}</div>{% endif %}
 {% if doc.header %}<table class="hdr">{% for pair in doc.header|batch(2) %}<tr>{% for k, v in pair %}<td>{{ k }}</td><td>{{ v or '-' }}</td>{% endfor %}</tr>{% endfor %}</table>{% endif %}
 {% for s in doc.sections %}<h2>{{ s.heading }}</h2>
+ {% if s.summary %}<table class="hdr">{% for pair in s.summary|batch(2) %}<tr>{% for k, v in pair %}<td>{{ k }}</td><td>{{ v or '-' }}</td>{% endfor %}</tr>{% endfor %}</table>{% endif %}
+ {% for label, text in s.fields or [] %}<p><strong>{{ label }}:</strong> {{ text }}</p>{% endfor %}
+ {% if s.note %}<p class="sub"><em>{{ s.note }}</em></p>{% endif %}
  {% for p in s.paragraphs or [] %}<p>{{ p }}</p>{% endfor %}
  {% if s.bullets %}<ul>{% for b in s.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
- {% if s.table and s.table.rows %}<table><tr>{% for c in s.table.columns %}<th>{{ c }}</th>{% endfor %}</tr>{% for r in s.table.rows %}<tr>{% for v in r %}<td>{{ v if v is not none else '' }}</td>{% endfor %}</tr>{% endfor %}</table>{% endif %}
+ {% if s.table and s.table.rows %}<table><tr>{% for c in s.table.columns %}<th>{{ c }}</th>{% endfor %}</tr>{% for r in s.table.rows %}<tr>{% for v in r %}<td style="white-space:pre-line">{{ v if v is not none else '' }}</td>{% endfor %}</tr>{% endfor %}</table>{% if s.table.caption %}<p class="sub"><em>{{ s.table.caption }}</em></p>{% endif %}
+ {% elif s.table is defined and s.table is not none and not s.bullets and not s.paragraphs %}<p class="sub"><em>{{ s.table.empty or 'None recorded.' }}</em></p>{% endif %}
 {% endfor %}
 {% if doc.footer %}<div class="footer">{{ doc.footer }}</div>{% endif %}
 </body></html>
