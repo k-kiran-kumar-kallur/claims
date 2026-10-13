@@ -1,0 +1,45 @@
+# Single-host v1 deployment (spec §4.3): reverse proxy + API + one worker sharing SQLite on local disk.
+services:
+  api:
+    build: ../backend
+    env_file: ../.env
+    environment:
+      APP_ENV: production
+      RUN_WORKER_IN_PROCESS: "false"
+      SEED_DEMO_DATA: "false"
+      COOKIE_SECURE: "true"
+      DATA_DIR: /data
+      SECRETS_DIR: /secrets
+    volumes: [ "appdata:/data", "./secrets:/secrets:ro" ]
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'"
+    restart: unless-stopped
+
+  worker:
+    build: ../backend
+    env_file: ../.env
+    environment:
+      APP_ENV: production
+      DATA_DIR: /data
+      SECRETS_DIR: /secrets
+    volumes: [ "appdata:/data", "./secrets:/secrets:ro" ]
+    command: python -m app.worker
+    depends_on: [ api ]
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../frontend
+    volumes: [ "./nginx.conf:/etc/nginx/conf.d/default.conf:ro", "./certs:/etc/nginx/certs:ro" ]
+    ports: [ "80:80", "443:443" ]
+    depends_on: [ api ]
+    restart: unless-stopped
+
+  litestream:  # continuous SQLite replication to object storage (spec §11.4 backups)
+    image: litestream/litestream:0.3.13
+    command: replicate -config /etc/litestream.yml
+    volumes: [ "appdata:/data", "./litestream.yml:/etc/litestream.yml:ro" ]
+    env_file: ../.env
+    restart: unless-stopped
+
+volumes:
+  appdata:

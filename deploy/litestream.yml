@@ -1,0 +1,7 @@
+dbs:
+  - path: /data/app.db
+    replicas:
+      - url: ${LITESTREAM_REPLICA_URL}   # e.g. s3://bucket/claims-ai/app.db (bucket with SSE-KMS + object lock)
+  - path: /data/checkpoints.db
+    replicas:
+      - url: ${LITESTREAM_REPLICA_URL_CHECKPOINTS}

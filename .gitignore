@@ -1,0 +1,97 @@
+# =============================================================================
+# Secrets & environment — NEVER commit
+# =============================================================================
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+secrets/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+id_rsa*
+id_ed25519*
+credentials.json
+service-account*.json
+
+# =============================================================================
+# Runtime data (databases, uploaded files, checkpoints)
+# =============================================================================
+data/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# =============================================================================
+# Python (backend)
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+
+# =============================================================================
+# Node / Vite / Playwright (frontend)
+# =============================================================================
+node_modules/
+frontend/dist/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+e2e-screens/
+*.tmp.mjs
+*.tmp
+
+# =============================================================================
+# Logs
+# =============================================================================
+logs/
+*.log
+
+# =============================================================================
+# OS & editor files
+# =============================================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# =============================================================================
+# Claude Code local settings
+# =============================================================================
+.claude/settings.local.json

@@ -1,0 +1,20 @@
+[project]
+name = "claims-ai-backend"
+version = "1.0.0"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 140
+target-version = "py311"
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501", "B008", "RUF001", "RUF012", "SIM108", "B904", "UP040", "RUF005", "SIM102", "B023", "SIM117"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B017", "E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning", "ignore::PendingDeprecationWarning"]

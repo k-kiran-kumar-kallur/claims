@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>{{ doc.title }}</title>
+<style>
+ body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1d2330;max-width:860px;margin:24px auto;padding:0 16px;font-size:13px;line-height:1.45}
+ h1{font-size:20px;margin:0 0 4px} .sub{color:#5b6475;font-size:12px} .banner{background:#fff3cd;border:1px solid #f0d58c;padding:6px 10px;margin:8px 0;font-weight:600;font-size:12px}
+ table{border-collapse:collapse;width:100%;margin:6px 0} td,th{border:1px solid #d8dde6;padding:4px 6px;text-align:left;vertical-align:top;font-size:12px} th{background:#eef2f7}
+ h2{font-size:14px;color:#1f4f8f;margin:16px 0 4px;border-bottom:1px solid #e3e7ee;padding-bottom:2px} .footer{color:#6b7280;font-size:11px;margin-top:18px;font-style:italic}
+ .hdr td:nth-child(odd){font-weight:600;width:16%;background:#f7f9fc}
+</style></head><body>
+<h1>{{ doc.title }}</h1>{% if doc.subtitle %}<div class="sub">{{ doc.subtitle }}</div>{% endif %}
+{% if doc.banner %}<div class="banner">{{ doc.banner }}</div>{% endif %}
+{% if doc.header %}<table class="hdr">{% for pair in doc.header|batch(2) %}<tr>{% for k, v in pair %}<td>{{ k }}</td><td>{{ v or '-' }}</td>{% endfor %}</tr>{% endfor %}</table>{% endif %}
+{% for s in doc.sections %}<h2>{{ s.heading }}</h2>
+ {% for p in s.paragraphs or [] %}<p>{{ p }}</p>{% endfor %}
+ {% if s.bullets %}<ul>{% for b in s.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
+ {% if s.table and s.table.rows %}<table><tr>{% for c in s.table.columns %}<th>{{ c }}</th>{% endfor %}</tr>{% for r in s.table.rows %}<tr>{% for v in r %}<td>{{ v if v is not none else '' }}</td>{% endfor %}</tr>{% endfor %}</table>{% endif %}
+{% endfor %}
+{% if doc.footer %}<div class="footer">{{ doc.footer }}</div>{% endif %}
+</body></html>
